@@ -39,17 +39,17 @@ class TestMiBodyProcessing(TestCase):
 
         self.correct_bodydata_path = '../tests/BODYDATA.TXT'
 
-    def test_uploading_dud_files(self):
+    def test_uploading_empty_files(self):
 
         """
         Tests uploading files, which are incorrectly structured.
         """
 
-        body_data = BodyData('tests/DUD_BODYDATA.TXT')
-
-        self.assertEqual(str(body_data), 'No weight entries found')
-        self.assertEqual(list(body_data), [])
-        self.assertEqual(len(body_data), 0)
+        with self.assertRaises(ValueError) as err:
+            body_data = BodyData('tests/EMPTY_FILE.TXT')
+        self.assertEqual(
+            str(err.exception),
+            'File, \'tests/EMPTY_FILE.TXT\' has yielded no weigh-ins')
 
     def test_providing_invalid_file_path(self):
 
@@ -87,7 +87,7 @@ class TestMiBodyProcessing(TestCase):
         Tests the input file parameter behaviour.
         """
 
-        initial_input_error = b"File, 'BODYDATA.TXT' not found.\n"
+        initial_input_error = b"File, 'BODYDATA.TXT' not found\n"
 
         # Test default parameters (should read BODYDATA.TXT and print JSON)
 
@@ -124,7 +124,21 @@ class TestMiBodyProcessing(TestCase):
 
         stderr = process.stderr.read()
         self.assertEqual(
-            stderr, b"File, '../tests/NON_BODYDATA.TXT' not found.\n")
+            stderr, b"File, '../tests/NON_BODYDATA.TXT' not found\n")
+
+        # If we provide an invalid file (empty or malformed)
+
+        for path in ('../tests/DUD_BODYDATA.TXT', '../tests/DUD_BODYDATA.TXT'):
+
+            process = subprocess.Popen(
+                [PYTHON_INTERPRETER, self.processor_filename, '-i', path],
+                cwd=self.processor_dir, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
+
+            stderr = process.stderr.read()
+            self.assertEqual(
+                stderr,
+                "File, '{}' has yielded no weigh-ins\n".format(path).encode())
 
     def test_command_line_read(self):
 

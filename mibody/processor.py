@@ -234,6 +234,7 @@ class BodyData(list):
 
         self.row_block_size = 18
 
+        self.file_path_or_object = file_path_or_object
         self.final_data = []
         self.file_object = None
 
@@ -252,10 +253,10 @@ class BodyData(list):
 
         if not self.file_object:
             try:
-                self.file_object = open(file_path_or_object, 'rb')
+                self.file_object = open(self.file_path_or_object, 'rb')
             except FileNotFoundError:
                 raise TypeError(
-                    'File, \'{}\' not found'.format(file_path_or_object))
+                    'File, \'{}\' not found'.format(self.file_path_or_object))
 
         self._process()
         self.file_object.close()
@@ -334,6 +335,10 @@ class BodyData(list):
                     'visceral_fat': visceral_fat,
                 }))
 
+        if not len(self):
+            raise ValueError('File, \'{}\' has yielded no weigh-ins'.format(
+                self.file_path_or_object))
+
     def __str__(self):
 
         """
@@ -373,20 +378,18 @@ if __name__ == '__main__':
 
     try:
 
-        with open(source_path, 'rb') as source:
+        processed_body_data = BodyData(source_path)
 
-            print(source)
+        if arguments['--format'] == 'json':
+            if arguments['--output'] == 'stdout':
+                pass  # TODO: Print JSON
+            else:
+                pass  # TODO: Write JSON to file
+        elif arguments['--format'] == 'csv':
+            if arguments['--output'] == 'stdout':
+                pass  # TODO: This isn't allowed
+            else:
+                pass  # TODO: Write CSV to file
 
-            if arguments['--format'] == 'json':
-                if arguments['--output'] == 'stdout':
-                    pass  # TODO: Print JSON
-                else:
-                    pass  # TODO: Write JSON to file
-            elif arguments['--format'] == 'csv':
-                if arguments['--output'] == 'stdout':
-                    pass  # TODO: This isn't allowed
-                else:
-                    pass  # TODO: Write CSV to file
-
-    except FileNotFoundError:
-        print('File, \'{}\' not found.'.format(source_path), file=sys.stderr)
+    except (TypeError, ValueError) as e:
+        print(str(e), file=sys.stderr)
