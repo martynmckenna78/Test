@@ -1,7 +1,16 @@
+from mibody.processor import BodyDataRow
 from unittest import TestCase
 from mibody import BodyData
-from mibody.processor import BodyDataRow
+import subprocess
 import datetime
+import json
+import sys
+import os
+
+
+THIS_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.realpath(os.path.join(THIS_FILE_DIR, '..'))
+PYTHON_INTERPRETER = sys.executable
 
 
 class TestMiBodyProcessing(TestCase):
@@ -9,6 +18,26 @@ class TestMiBodyProcessing(TestCase):
     """
     Tests the processing of MiBody data only.
     """
+
+    def setUp(self):
+
+        """
+        Checks a few things first.
+        """
+
+        self.processor_dir = os.path.join(PROJECT_DIR, 'mibody')
+        self.assertTrue(
+            os.path.isdir(self.processor_dir),
+            'Processor directory does not exist')
+
+        self.processor_filename = 'processor.py'
+        self.processor_path = os.path.join(
+            self.processor_dir, self.processor_filename)
+        self.assertTrue(
+            os.path.isfile(self.processor_path),
+            'Processor file doss not exist')
+
+        self.correct_bodydata_path = '../tests/BODYDATA.TXT'
 
     def test_uploading_dud_files(self):
 
@@ -51,6 +80,67 @@ class TestMiBodyProcessing(TestCase):
             self.assertGreater(record.weight, 0)
             self.assertGreater(record.age, 0)
             self.assertEqual(record.gender, 'M')
+
+    def test_command_line_file_path_arguments(self):
+
+        """
+        Tests the input file parameter behaviour.
+        """
+
+        initial_input_error = b"File, 'BODYDATA.TXT' not found.\n"
+
+        # Test default parameters (should read BODYDATA.TXT and print JSON)
+
+        process = subprocess.Popen(
+            [PYTHON_INTERPRETER, self.processor_filename],
+            cwd=self.processor_dir, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+
+        # Should have an error as BODYDATA.TXT doesn't exist in same directory
+
+        stderr = process.stderr.read()
+        self.assertEqual(stderr, initial_input_error)
+
+        # Should be fine this time as it's a correct path
+
+        process = subprocess.Popen(
+            [
+                PYTHON_INTERPRETER, self.processor_filename, '-i',
+                self.correct_bodydata_path],
+            cwd=self.processor_dir, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+
+        stderr = process.stderr.read()
+        self.assertNotEqual(stderr, initial_input_error)
+
+        # If we provide with another invalid path...
+
+        process = subprocess.Popen(
+            [
+                PYTHON_INTERPRETER, self.processor_filename, '-i',
+                '../tests/NON_BODYDATA.TXT'],
+            cwd=self.processor_dir, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+
+        stderr = process.stderr.read()
+        self.assertEqual(
+            stderr, b"File, '../tests/NON_BODYDATA.TXT' not found.\n")
+
+    def test_command_line_read(self):
+
+        """
+        Tests reading data and outputting to stdout.
+        """
+
+        self.fail('Argument spec and response to be tested')
+
+    def test_command_line_csv_export(self):
+
+        """
+        Tests exporting data to CSV via command line utility.
+        """
+
+        self.fail('Argument spec and response to be tested')
 
 
 class MiBodyUnitConversionTestCase(TestCase):

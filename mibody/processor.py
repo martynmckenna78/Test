@@ -3,17 +3,32 @@
 """Read Salter MiBody scale data
 
 Usage:
-  processor.py read <infile>
+  processor.py [-i INFILE] [-o OUTFILE] [-f FORMAT] [-h HEIGHT_UNIT] \
+[-w WEIGHT_UNIT]
+  processor.py --version
+  processor.py --help
 
 Options:
-  -h --help     Show this screen.
-  --version     Show version.
+  --version                             Show version.
+  --help                                Show this screen.
+  -f FORMAT, --format=FORMAT            The format to export to \
+[default: json].
+  -i INFILE, --input=INFILE             The file to output to \
+[default: BODYDATA.TXT].
+  -o OUTFILE, --output=OUTFILE          The file to output to \
+[default: stdout].
+  -h HEIGHT_UNIT, --height=HEIGHT_UNIT  The unit to represent height \
+[default: cm].
+  -w WEIGHT_UNIT, --weight=WEIGHT_UNIT  The unit to represent weight \
+[default: lbs].
 """
 
 
 import datetime
 import docopt
 import math
+import sys
+import os
 
 
 class BodyDataRow(dict):
@@ -215,6 +230,8 @@ class BodyData(list):
         :param file_path_or_object: str or file
         """
 
+        super(BodyData, self).__init__([])
+
         self.row_block_size = 18
 
         self.final_data = []
@@ -343,9 +360,33 @@ if __name__ == '__main__':
     Handle command line arguments should one wish to do it that way.
     """
 
+    this_file_dir = os.path.dirname(os.path.abspath(__file__))
     arguments = docopt.docopt(__doc__, version='0.1')
 
     # Do stuff with arguments
 
-    if arguments.get('read'):
-        print(str(BodyData(arguments['<infile>'])))
+    source_path = arguments['--input']
+    if not os.path.isfile(source_path):
+        source_path = os.path.join(this_file_dir, arguments['--input'])
+        if not os.path.isfile(source_path):
+            source_path = os.path.expanduser(arguments['--input'])
+
+    try:
+
+        with open(source_path, 'rb') as source:
+
+            print(source)
+
+            if arguments['--format'] == 'json':
+                if arguments['--output'] == 'stdout':
+                    pass  # TODO: Print JSON
+                else:
+                    pass  # TODO: Write JSON to file
+            elif arguments['--format'] == 'csv':
+                if arguments['--output'] == 'stdout':
+                    pass  # TODO: This isn't allowed
+                else:
+                    pass  # TODO: Write CSV to file
+
+    except FileNotFoundError:
+        print('File, \'{}\' not found.'.format(source_path), file=sys.stderr)
