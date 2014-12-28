@@ -62,7 +62,12 @@ class TestMiBodyProcessing(TestCase):
         kwargs.update(extrakwargs)
 
         process = subprocess.Popen(params, *args, **kwargs)
-        return process, process.stdout.read(), process.stderr.read()
+        response = process, process.stdout.read(), process.stderr.read()
+
+        process.stdout.close()
+        process.stderr.close()
+
+        return response
 
     def test_uploading_empty_files(self):
 
@@ -231,6 +236,7 @@ class TestMiBodyProcessing(TestCase):
                     self.assertEqual(row_data.bmi, float(row[6]))
                     self.assertEqual(row_data.bmr, int(row[10]))
 
+        csv_file_1.close()
         os.unlink(csv_file_path)
 
         # We can be confident the file contents are the correct in the CSV.
@@ -247,6 +253,7 @@ class TestMiBodyProcessing(TestCase):
         self.assertIn('),"Height (feet, inches)",Fi', str(csv_file_2_contents))
         self.assertIn('21,"5, 8.897637795275593",0', str(csv_file_2_contents))
 
+        csv_file_2.close()
         os.unlink(csv_file_path)
 
         # Now test weight in KG
@@ -260,6 +267,7 @@ class TestMiBodyProcessing(TestCase):
         self.assertIn('vel,Weight (KG),BMI', str(csv_file_3_contents))
         self.assertIn('0,66.6,21.75', str(csv_file_3_contents))
 
+        csv_file_3.close()
         os.unlink(csv_file_path)
 
         # Now test weight in stones, lbs
@@ -275,6 +283,7 @@ class TestMiBodyProcessing(TestCase):
         self.assertIn(
             '0,"10, 6.825027999999989",21.75', str(csv_file_4_contents))
 
+        csv_file_4.close()
         os.unlink(csv_file_path)
 
         # Test JSON output and a few more height/weight unit tests
@@ -301,6 +310,7 @@ class TestMiBodyProcessing(TestCase):
         self.assertIn('Height (CM)', json_output_1[0])
         self.assertEqual(json_output_1[34]['Height (CM)'], 175)
 
+        json_file_1.close()
         os.unlink(json_file_path)
 
         # Change both height and weight values, ensuring they change in output

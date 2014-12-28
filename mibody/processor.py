@@ -291,6 +291,7 @@ class BodyData(list):
             try:
                 block = self.file_object.read(self.row_block_size)
             except UnicodeDecodeError:
+                self.file_object.close()
                 raise ValueError(
                     'Read failed, please ensure the file object is opened as '
                     'binary')
@@ -354,6 +355,7 @@ class BodyData(list):
                 }))
 
         if not len(self):
+            self.file_object.close()
             raise ValueError('File, \'{}\' has yielded no weigh-ins'.format(
                 self.file_path_or_object))
 
