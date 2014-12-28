@@ -33,6 +33,21 @@ import os
 import io
 
 
+class JSONEncoder(json.JSONEncoder):
+
+    """
+    Takes care of JSON-encoding unexpected object types.
+    """
+
+    def default(self, obj):
+
+        # Convert date/times to standard __str__ representation
+        if isinstance(obj, datetime.datetime):
+            return str(obj)
+
+        return json.JSONEncoder.default(self, obj)
+
+
 class BodyDataRow(dict):
 
     """
@@ -272,6 +287,7 @@ class BodyData(list):
         self.final_data = []
 
         while True:
+
             try:
                 block = self.file_object.read(self.row_block_size)
             except UnicodeDecodeError:
@@ -341,18 +357,35 @@ class BodyData(list):
             raise ValueError('File, \'{}\' has yielded no weigh-ins'.format(
                 self.file_path_or_object))
 
-    def export(self, destination, format, height='cm', weight='lbs'):
+    def _multi_value_export_format(self, _format, value):
+
+        """
+        Returns the correctly-formatted value for the export and type.
+
+        :param _format: str (one of 'json' or 'csv')
+        :param value: list
+        :return: str or list
+        """
+
+        if isinstance(value, tuple):
+            if _format == 'csv':
+                return '{}, {}'.format(*value)
+
+        return value
+
+    def export(
+            self, destination=None, _format='json', height='cm', weight='lbs'):
 
         """
         Exports the data to a useful format.
 
         :param destination: str or file-like (The destination or 'stdout')
-        :param format: str (one of 'json' or 'csv')
+        :param _format: str (one of 'json' or 'csv')
         :param height: str (one of 'cm' or 'ft_in')
         :param weight: str (one of 'lbs', 'kg' or 'st_lbs')
         """
 
-        assert format in ('json', 'csv'), \
+        assert _format in ('json', 'csv'), \
             "Format must be one of 'cm' or 'ft_in'"
 
         assert height in ('cm', 'ft_in'), \
@@ -370,7 +403,7 @@ class BodyData(list):
 
         weight_repr = {
             'lbs': 'lbs',
-            'st_lbs': 'st, lbs',
+            'st_lbs': 'stones, lbs',
             'kg': 'KG',
         }
 
@@ -397,14 +430,16 @@ class BodyData(list):
 
             final_height = record['height']  # Height already in CM
             if height == 'ft_in':
-                final_height = ', '.join(record.height_feet_inches)
+                final_height = self._multi_value_export_format(
+                    _format, record.height_feet_inches)
             final_record.update({'height': final_height})
 
             final_weight = record['weight']  # Weight already in KG
             if weight == 'lbs':
                 final_weight = record.weight_lbs
             if weight == 'st_lbs':
-                final_weight = ', '.join(record.weight_stones_lbs)
+                final_weight = self._multi_value_export_format(
+                    _format, record.weight_stones_lbs)
             final_record.update({'weight': final_weight})
 
             final_record['gender'] = (
@@ -421,7 +456,7 @@ class BodyData(list):
         # Next step is to represent the data as requested
 
         final_data_str = io.StringIO()
-        if format == 'csv':
+        if _format == 'csv':
 
             field_names = [
                 key_val_map['date_time'],
@@ -441,8 +476,8 @@ class BodyData(list):
                 final_data_str, fieldnames=field_names)
             writer.writeheader()
             writer.writerows(final_data)
-        elif format == 'json':
-            final_data_str.write(json.dumps(final_data))
+        elif _format == 'json':
+            final_data_str.write(json.dumps(final_data, cls=JSONEncoder))
 
         # We need to set the file index to 0 before writing the data
 
@@ -450,7 +485,9 @@ class BodyData(list):
 
         # Final step is to print final data to stdout or write to file
 
-        if destination == 'stdout':
+        if destination is None:
+            return final_data_str
+        elif destination == 'stdout':
             print(final_data_str.read(), file=sys.stdout)
         elif hasattr(destination, 'seek'):
             for line in final_data_str.readlines():
@@ -503,6 +540,8 @@ if __name__ == '__main__':
             path = os.path.join(this_file_dir, path)
             if not os.path.isfile(path):
                 path = os.path.expanduser(path)
+
+        path = os.path.realpath(path)
 
         if mode == os.R_OK and not os.path.isfile(path):
             raise TypeError("File, '{}' not found".format(path))

@@ -4,8 +4,8 @@ from mibody import BodyData
 import subprocess
 import datetime
 import json
+import csv
 import sys
-import io
 import os
 
 
@@ -112,7 +112,9 @@ class TestMiBodyProcessing(TestCase):
         Tests the input file parameter behaviour.
         """
 
-        initial_input_error = b"File, 'BODYDATA.TXT' not found\n"
+        full_path = os.path.realpath(os.path.join('mibody', 'BODYDATA.TXT'))
+        initial_input_error = bytes(
+            "File, '{}' not found\n".format(full_path).encode())
 
         # Test default parameters (should read BODYDATA.TXT and print JSON)
 
@@ -134,8 +136,9 @@ class TestMiBodyProcessing(TestCase):
         process, _, stderr = self._shell_call([
             '-i', '../tests/NON_BODYDATA.TXT'])
 
+        full_path = os.path.realpath(os.path.join('tests', 'NON_BODYDATA.TXT'))
         self.assertEqual(
-            stderr, b"File, '../tests/NON_BODYDATA.TXT' not found\n")
+            stderr, bytes("File, '{}' not found\n".format(full_path).encode()))
 
         # If we provide an invalid file (empty or malformed)
 
@@ -143,9 +146,11 @@ class TestMiBodyProcessing(TestCase):
 
             process, _, stderr = self._shell_call(['-i', path])
 
+            full_path = os.path.realpath(os.path.join('tests', path))
             self.assertEqual(
                 stderr,
-                "File, '{}' has yielded no weigh-ins\n".format(path).encode())
+                "File, '{}' has yielded no weigh-ins\n".format(
+                    full_path).encode())
 
     def test_command_line_export(self):
 
@@ -153,7 +158,9 @@ class TestMiBodyProcessing(TestCase):
         Tests exporting data to JSON and CSV via command line utility.
         """
 
-        # TODO: 1. Go through notions of CSV export
+        body_data_path = './tests/BODYDATA.TXT'
+
+        # Go through notions of CSV export
 
         # By default, JSON (test later), provide invalid format
 
@@ -163,6 +170,8 @@ class TestMiBodyProcessing(TestCase):
 
         # Setting format to CSV should be enough for an output
 
+        csv_file_path = './tests/BODYDATA.CSV'
+
         process, stdout, _ = self._shell_call([
             '-i', self.correct_bodydata_path, '-f', 'csv'])
         csv_output_1 = stdout
@@ -170,15 +179,149 @@ class TestMiBodyProcessing(TestCase):
         process, _, _ = self._shell_call([
             '-i', self.correct_bodydata_path, '-f', 'csv',
             '-o', self.correct_csv_export_path])
-        csv_file_1 = open('./tests/BODYDATA.CSV', 'r')
-        os.unlink('./tests/BODYDATA.CSV')
+        csv_file_1 = open(csv_file_path, 'r')
+        csv_file_1_contents = csv_file_1.read()
 
-        self.assertEqual(csv_file_1.read()[:117], str(csv_output_1)[2:119])
+        # Test CSV contents
 
-        # TODO: 2. Do all CSV-related tests with value differences
-        # TODO: 3. Test JSON output and a few more height/weight unit tests
+        body_data = BodyData(body_data_path)
+        with open(csv_file_path) as csv_file:
+            reader = csv.reader(csv_file)
+            self.assertEqual(
+                csv_file_1_contents[:117], str(csv_output_1)[2:119])
+            self.assertEqual(
+                csv_file_1_contents[2620:2695], str(csv_output_1)[2727:2802])
+            for i, row in enumerate(reader):
 
-        self.fail('Argument spec and response to be tested')
+                # Test absolute values
+
+                if i == 0:
+                    self.assertEqual(row, [
+                        'Date/time', 'Gender', 'Age (years)', 'Height (CM)',
+                        'Fitness level', 'Weight (lbs)', 'BMI', 'Body fat (%)',
+                        'Muscle mass (%)', 'Visceral fat', 'BMR',
+                    ])
+                elif i == 1:
+                    self.assertEqual(row, [
+                        '2012-02-10 19:09:11', 'Male', '21', '175', '0',
+                        '147.04832887406002', '21.78', '14.5', '46.6', '3',
+                        '1661'])
+                elif i == 35:
+                    self.assertEqual(row, [
+                        '2012-01-26 03:25:56', 'Male', '21', '175', '0',
+                        '146.82786661187998', '21.75', '14.6', '46.7', '3',
+                        '1660'])
+
+                # Test per-row values
+
+                if i > 0:  # Not the header row
+                    row_data = body_data[i - 1]
+
+                    self.assertEqual(str(row_data.date_time), row[0])
+                    self.assertEqual(row_data.gender, row[1][0])
+                    self.assertEqual(row_data.age, int(row[2]))
+                    self.assertEqual(row_data.height, int(row[3]))
+                    self.assertEqual(row_data.fitness_level, int(row[4]))
+
+                    self.assertEqual(row_data.weight_lbs, float(row[5]))
+                    self.assertEqual(row_data.body_fat, float(row[7]))
+                    self.assertEqual(row_data.muscle_mass, float(row[8]))
+                    self.assertEqual(row_data.visceral_fat, int(row[9]))
+
+                    self.assertEqual(row_data.bmi, float(row[6]))
+                    self.assertEqual(row_data.bmr, int(row[10]))
+
+        os.unlink(csv_file_path)
+
+        # We can be confident the file contents are the correct in the CSV.
+        # This time, we'll change the height/weight values and test.
+
+        # First, test height value change to feet and inches
+
+        process, _, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'csv',
+            '-o', self.correct_csv_export_path, '-h', 'ft_in'])
+        csv_file_2 = open(csv_file_path, 'r')
+        csv_file_2_contents = csv_file_2.read()
+
+        self.assertIn('),"Height (feet, inches)",Fi', str(csv_file_2_contents))
+        self.assertIn('21,"5, 8.897637795275593",0', str(csv_file_2_contents))
+
+        os.unlink(csv_file_path)
+
+        # Now test weight in KG
+
+        process, _, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'csv',
+            '-o', self.correct_csv_export_path, '-w', 'kg'])
+        csv_file_3 = open(csv_file_path, 'r')
+        csv_file_3_contents = csv_file_3.read()
+
+        self.assertIn('vel,Weight (KG),BMI', str(csv_file_3_contents))
+        self.assertIn('0,66.6,21.75', str(csv_file_3_contents))
+
+        os.unlink(csv_file_path)
+
+        # Now test weight in stones, lbs
+
+        process, _, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'csv',
+            '-o', self.correct_csv_export_path, '-w', 'st_lbs'])
+        csv_file_4 = open(csv_file_path, 'r')
+        csv_file_4_contents = csv_file_4.read()
+
+        self.assertIn(
+            'vel,"Weight (stones, lbs)",BMI', str(csv_file_4_contents))
+        self.assertIn(
+            '0,"10, 6.825027999999989",21.75', str(csv_file_4_contents))
+
+        os.unlink(csv_file_path)
+
+        # Test JSON output and a few more height/weight unit tests
+
+        # Setting format to CSV should be enough for an output
+
+        json_file_path = './tests/BODYDATA.JSON'
+
+        process, stdout, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'json'])
+        json_output_1 = json.loads(stdout.decode())
+
+        process, _, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'json',
+            '-o', self.correct_json_export_path])
+        json_file_1 = open(json_file_path, 'r')
+        json_file_1_contents = json.loads(json_file_1.read())
+
+        self.assertEqual(json_output_1, json_file_1_contents)
+
+        self.assertIn('Weight (lbs)', json_output_1[0])
+        self.assertEqual(json_output_1[34]['Weight (lbs)'], 146.82786661187998)
+
+        self.assertIn('Height (CM)', json_output_1[0])
+        self.assertEqual(json_output_1[34]['Height (CM)'], 175)
+
+        os.unlink(json_file_path)
+
+        # Change both height and weight values, ensuring they change in output
+
+        process, stdout, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'json',
+            '-h', 'ft_in', '-w', 'kg'])
+        json_output_2 = json.loads(stdout.decode())
+
+        self.assertIn('Weight (KG)', json_output_2[0])
+        self.assertEqual(json_output_2[34]['Weight (KG)'], 66.6)
+
+        self.assertIn('Height (feet, inches)', json_output_2[0])
+        self.assertEqual(
+            json_output_2[34]['Height (feet, inches)'], [5, 8.897637795275593])
+
+        # Just a final check
+
+        self.assertEqual(
+            json.loads(body_data.export(height='ft_in', weight='kg').read()),
+            json_output_2)
 
 
 class MiBodyUnitConversionTestCase(TestCase):
