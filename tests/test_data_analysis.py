@@ -5,6 +5,7 @@ import subprocess
 import datetime
 import json
 import sys
+import io
 import os
 
 
@@ -38,6 +39,30 @@ class TestMiBodyProcessing(TestCase):
             'Processor file doss not exist')
 
         self.correct_bodydata_path = '../tests/BODYDATA.TXT'
+        self.correct_csv_export_path = '../tests/BODYDATA.CSV'
+        self.correct_json_export_path = '../tests/BODYDATA.JSON'
+
+    def _shell_call(self, params=None, *args, **extrakwargs):
+
+        """
+        Provides a method to call subprocess.Popen without the additional args.
+
+        :param params: list
+        :return: subprocess.Popen instance, stdout, stderr
+        """
+
+        if params is None:
+            params = []
+
+        params = [PYTHON_INTERPRETER, self.processor_filename] + params
+
+        kwargs = dict(
+            cwd=self.processor_dir, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        kwargs.update(extrakwargs)
+
+        process = subprocess.Popen(params, *args, **kwargs)
+        return process, process.stdout.read(), process.stderr.read()
 
     def test_uploading_empty_files(self):
 
@@ -91,38 +116,24 @@ class TestMiBodyProcessing(TestCase):
 
         # Test default parameters (should read BODYDATA.TXT and print JSON)
 
-        process = subprocess.Popen(
-            [PYTHON_INTERPRETER, self.processor_filename],
-            cwd=self.processor_dir, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
+        process, _, stderr = self._shell_call()
 
         # Should have an error as BODYDATA.TXT doesn't exist in same directory
 
-        stderr = process.stderr.read()
         self.assertEqual(stderr, initial_input_error)
 
         # Should be fine this time as it's a correct path
 
-        process = subprocess.Popen(
-            [
-                PYTHON_INTERPRETER, self.processor_filename, '-i',
-                self.correct_bodydata_path],
-            cwd=self.processor_dir, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
+        process, _, stderr = self._shell_call([
+            '-i', self.correct_bodydata_path])
 
-        stderr = process.stderr.read()
         self.assertNotEqual(stderr, initial_input_error)
 
         # If we provide with another invalid path...
 
-        process = subprocess.Popen(
-            [
-                PYTHON_INTERPRETER, self.processor_filename, '-i',
-                '../tests/NON_BODYDATA.TXT'],
-            cwd=self.processor_dir, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
+        process, _, stderr = self._shell_call([
+            '-i', '../tests/NON_BODYDATA.TXT'])
 
-        stderr = process.stderr.read()
         self.assertEqual(
             stderr, b"File, '../tests/NON_BODYDATA.TXT' not found\n")
 
@@ -130,29 +141,42 @@ class TestMiBodyProcessing(TestCase):
 
         for path in ('../tests/DUD_BODYDATA.TXT', '../tests/DUD_BODYDATA.TXT'):
 
-            process = subprocess.Popen(
-                [PYTHON_INTERPRETER, self.processor_filename, '-i', path],
-                cwd=self.processor_dir, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE)
+            process, _, stderr = self._shell_call(['-i', path])
 
-            stderr = process.stderr.read()
             self.assertEqual(
                 stderr,
                 "File, '{}' has yielded no weigh-ins\n".format(path).encode())
 
-    def test_command_line_read(self):
+    def test_command_line_export(self):
 
         """
-        Tests reading data and outputting to stdout.
+        Tests exporting data to JSON and CSV via command line utility.
         """
 
-        self.fail('Argument spec and response to be tested')
+        # TODO: 1. Go through notions of CSV export
 
-    def test_command_line_csv_export(self):
+        # By default, JSON (test later), provide invalid format
 
-        """
-        Tests exporting data to CSV via command line utility.
-        """
+        process, _, stderr = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'blah'])
+        self.assertEqual(stderr, b"Format, 'blah' is invalid\n")
+
+        # Setting format to CSV should be enough for an output
+
+        process, stdout, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'csv'])
+        csv_output_1 = stdout
+
+        process, _, _ = self._shell_call([
+            '-i', self.correct_bodydata_path, '-f', 'csv',
+            '-o', self.correct_csv_export_path])
+        csv_file_1 = open('./tests/BODYDATA.CSV', 'r')
+        os.unlink('./tests/BODYDATA.CSV')
+
+        self.assertEqual(csv_file_1.read()[:117], str(csv_output_1)[2:119])
+
+        # TODO: 2. Do all CSV-related tests with value differences
+        # TODO: 3. Test JSON output and a few more height/weight unit tests
 
         self.fail('Argument spec and response to be tested')
 

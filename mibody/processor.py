@@ -23,12 +23,14 @@ Options:
 [default: lbs].
 """
 
-
 import datetime
 import docopt
 import math
+import json
+import csv
 import sys
 import os
+import io
 
 
 class BodyDataRow(dict):
@@ -256,7 +258,7 @@ class BodyData(list):
                 self.file_object = open(self.file_path_or_object, 'rb')
             except FileNotFoundError:
                 raise TypeError(
-                    'File, \'{}\' not found'.format(self.file_path_or_object))
+                    "File, '{}' not found".format(self.file_path_or_object))
 
         self._process()
         self.file_object.close()
@@ -339,6 +341,125 @@ class BodyData(list):
             raise ValueError('File, \'{}\' has yielded no weigh-ins'.format(
                 self.file_path_or_object))
 
+    def export(self, destination, format, height='cm', weight='lbs'):
+
+        """
+        Exports the data to a useful format.
+
+        :param destination: str or file-like (The destination or 'stdout')
+        :param format: str (one of 'json' or 'csv')
+        :param height: str (one of 'cm' or 'ft_in')
+        :param weight: str (one of 'lbs', 'kg' or 'st_lbs')
+        """
+
+        assert format in ('json', 'csv'), \
+            "Format must be one of 'cm' or 'ft_in'"
+
+        assert height in ('cm', 'ft_in'), \
+            "Height option must be one of 'cm' or 'ft_in'"
+
+        assert weight in ('lbs', 'kg', 'st_lbs'), \
+            "Weight option must be one of 'lbs', 'kg' or 'st_lbs'"
+
+        # First step is to format the data accordingly
+
+        height_repr = {
+            'cm': 'CM',
+            'ft_in': 'feet, inches',
+        }
+
+        weight_repr = {
+            'lbs': 'lbs',
+            'st_lbs': 'st, lbs',
+            'kg': 'KG',
+        }
+
+        key_val_map = {
+            'gender': 'Gender',
+            'age': 'Age (years)',
+            'visceral_fat': 'Visceral fat',
+            'height': 'Height ({})'.format(height_repr[height]),
+            'weight': 'Weight ({})'.format(weight_repr[weight]),
+            'date_time': 'Date/time',
+            'muscle_mass': 'Muscle mass (%)',
+            'body_fat': 'Body fat (%)',
+            'fitness_level': 'Fitness level',
+            'bmi': 'BMI',
+            'bmr': 'BMR',
+        }
+
+        final_data = []
+        for record in self:
+
+            final_record = record.copy()
+
+            # Set up height and weight values
+
+            final_height = record['height']  # Height already in CM
+            if height == 'ft_in':
+                final_height = ', '.join(record.height_feet_inches)
+            final_record.update({'height': final_height})
+
+            final_weight = record['weight']  # Weight already in KG
+            if weight == 'lbs':
+                final_weight = record.weight_lbs
+            if weight == 'st_lbs':
+                final_weight = ', '.join(record.weight_stones_lbs)
+            final_record.update({'weight': final_weight})
+
+            final_record['gender'] = (
+                'Male' if final_record['gender'] == 'M' else 'Female')
+
+            # Add the BMI and BMR values to the data
+
+            final_record['bmi'] = record.bmi
+            final_record['bmr'] = record.bmr
+
+            final_data.append({
+                val: final_record[key] for key, val in key_val_map.items()})
+
+        # Next step is to represent the data as requested
+
+        final_data_str = io.StringIO()
+        if format == 'csv':
+
+            field_names = [
+                key_val_map['date_time'],
+                key_val_map['gender'],
+                key_val_map['age'],
+                key_val_map['height'],
+                key_val_map['fitness_level'],
+                key_val_map['weight'],
+                key_val_map['bmi'],
+                key_val_map['body_fat'],
+                key_val_map['muscle_mass'],
+                key_val_map['visceral_fat'],
+                key_val_map['bmr'],
+            ]
+
+            writer = csv.DictWriter(
+                final_data_str, fieldnames=field_names)
+            writer.writeheader()
+            writer.writerows(final_data)
+        elif format == 'json':
+            final_data_str.write(json.dumps(final_data))
+
+        # We need to set the file index to 0 before writing the data
+
+        final_data_str.seek(0)
+
+        # Final step is to print final data to stdout or write to file
+
+        if destination == 'stdout':
+            print(final_data_str.read(), file=sys.stdout)
+        elif hasattr(destination, 'seek'):
+            for line in final_data_str.readlines():
+                destination.write(line)
+        else:
+            with open(destination, 'w') as f:
+                for line in final_data_str.readlines():
+                    f.write(line)
+
     def __str__(self):
 
         """
@@ -368,28 +489,54 @@ if __name__ == '__main__':
     this_file_dir = os.path.dirname(os.path.abspath(__file__))
     arguments = docopt.docopt(__doc__, version='0.1')
 
-    # Do stuff with arguments
+    def _resolve_path(path, mode=os.R_OK):
 
-    source_path = arguments['--input']
-    if not os.path.isfile(source_path):
-        source_path = os.path.join(this_file_dir, arguments['--input'])
-        if not os.path.isfile(source_path):
-            source_path = os.path.expanduser(arguments['--input'])
+        """
+        Resolves the provided file to a path.
+
+        :param path: str
+        :param mode: os.access mode
+        :return: str
+        """
+
+        if not os.path.isfile(path):
+            path = os.path.join(this_file_dir, path)
+            if not os.path.isfile(path):
+                path = os.path.expanduser(path)
+
+        if mode == os.R_OK and not os.path.isfile(path):
+            raise TypeError("File, '{}' not found".format(path))
+
+        if mode:
+            if (
+                (mode == os.R_OK and not os.access(path, mode)) or
+                (mode == os.W_OK and not os.access(
+                    os.path.dirname(path), os.W_OK))
+            ):
+                raise TypeError("File, '{}' is not {}".format(
+                    path, ('writeable' if mode == os.W_OK else 'readable')))
+
+        return path
+
+    # Do stuff with arguments
 
     try:
 
+        source_path = _resolve_path(arguments['--input'])
+
         processed_body_data = BodyData(source_path)
 
-        if arguments['--format'] == 'json':
-            if arguments['--output'] == 'stdout':
-                pass  # TODO: Print JSON
-            else:
-                pass  # TODO: Write JSON to file
-        elif arguments['--format'] == 'csv':
-            if arguments['--output'] == 'stdout':
-                pass  # TODO: This isn't allowed
-            else:
-                pass  # TODO: Write CSV to file
+        if arguments['--format'] not in ('json', 'csv'):
+            raise TypeError('Format, \'{}\' is invalid'.format(
+                arguments['--format']))
 
-    except (TypeError, ValueError) as e:
+        destination_path = arguments['--output']
+        if destination_path != 'stdout':
+            destination_path = _resolve_path(destination_path, os.W_OK)
+
+        processed_body_data.export(
+            destination_path, arguments['--format'],
+            height=arguments['--height'], weight=arguments['--weight'])
+
+    except (TypeError, ValueError, AssertionError) as e:
         print(str(e), file=sys.stderr)
