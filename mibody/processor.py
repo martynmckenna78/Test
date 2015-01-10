@@ -271,7 +271,7 @@ class BodyData(list):
         if not self.file_object:
             try:
                 self.file_object = open(self.file_path_or_object, 'rb')
-            except FileNotFoundError:
+            except (IOError, OSError):
                 raise TypeError(
                     "File, '{}' not found".format(self.file_path_or_object))
 

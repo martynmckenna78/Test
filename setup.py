@@ -8,7 +8,7 @@ except ImportError:
 from pip.req import parse_requirements
 
 
-install_requirements = parse_requirements('requirements.txt')
+install_requirements = parse_requirements('requirements.txt', session='')
 requirements = [str(ir.req) for ir in install_requirements]
 
 
